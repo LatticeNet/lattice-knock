@@ -1,0 +1,40 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: tag matches the scripts
+        run: |
+          tag="$GITHUB_REF_NAME"
+          grep -qx "KNOCK_VERSION=\"${tag#v}\"" knock || { echo "knock does not say ${tag#v}: $(grep '^KNOCK_VERSION=' knock)"; exit 1; }
+          grep -qx "KNOCK_RELEASE=\"$tag\"" install.sh || { echo "install.sh does not say $tag: $(grep '^KNOCK_RELEASE=' install.sh)"; exit 1; }
+      - name: shellcheck
+        run: shellcheck knock install.sh tests/run.sh
+      - name: tests
+        run: bash tests/run.sh
+      - name: checksums
+        run: |
+          sha256sum knock install.sh > SHA256SUMS
+          cat SHA256SUMS
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          notes="Install: curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${tag}/install.sh | sh
+          Assets are checked against SHA256SUMS by install.sh."
+          # A tag with a suffix is a prerelease and must never become Latest;
+          # a clean vX.Y.Z is a stable cut, which is the maintainer's decision.
+          case "$tag" in
+            *-*) gh release create "$tag" knock install.sh SHA256SUMS --title "$tag" --notes "$notes" --prerelease --latest=false ;;
+            *) gh release create "$tag" knock install.sh SHA256SUMS --title "$tag" --notes "$notes" ;;
+          esac
