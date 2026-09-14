@@ -118,7 +118,9 @@ fi
 case "$TARGET" in -*) die "ssh resolves $HOST to a name starting with '-'" 2 ;; esac
 
 lookup() {
-  [ -n "$1" ] && [ -r "$CONF" ] || return 1
+  if [ -z "$1" ] || [ ! -r "$CONF" ]; then
+    return 1
+  fi
   awk -v h="$1" '$1 !~ /^#/ && $1 == h { print $2; found = 1; exit } END { exit !found }' "$CONF"
 }
 
@@ -140,7 +142,9 @@ for p in "${RAW[@]}"; do
     *:*) die "the gate takes UDP only; the sequence has another protocol suffix (not printed)" ;;
   esac
   case "$p" in ''|*[!0-9]*) die "the sequence has an entry that is not a port (not printed)" ;; esac
-  [ "$p" -ge 1 ] && [ "$p" -le 65535 ] || die "the sequence has a port outside 1-65535 (not printed)"
+  if [ "$p" -lt 1 ] || [ "$p" -gt 65535 ]; then
+    die "the sequence has a port outside 1-65535 (not printed)"
+  fi
   PORTS+=("$p")
 done
 # A sequence one port short never completes, yet the knock still reports
