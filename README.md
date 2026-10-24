@@ -15,7 +15,7 @@ That is the argument shape of the packaged `knock` client from knockd. This clie
 From GitHub:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/LatticeNet/lattice-knock/v0.1.0-alpha.1/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/LatticeNet/lattice-knock/v0.1.0-alpha.2/install.sh | sh
 ```
 
 From your Lattice control plane, for networks that cannot reach GitHub. A Lattice server serves the client it was released with at `/tools/knock/`, and its `install.sh` already names that server and the client's sha256:
@@ -27,7 +27,7 @@ curl -fsSL https://lattice.example.com/tools/knock/install.sh | sh
 Through a GitHub mirror, with the sha256 from the Lattice console or the release page:
 
 ```sh
-curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/LatticeNet/lattice-knock/v0.1.0-alpha.1/install.sh \
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/LatticeNet/lattice-knock/v0.1.0-alpha.2/install.sh \
   | sh -s -- --github-mirror https://ghfast.top/ --sha256 <hash>
 ```
 
@@ -62,6 +62,7 @@ Keep it readable only by you (`chmod 600`): a sequence is a credential.
 - A sequence has exactly three ports, the length Lattice SSH Guard uses (`KNOCK_PORTS` to change). A trailing comma drops a port, and a short sequence would otherwise report success and leave the port shut.
 - The gate admits IPv4 sources only, so `-6` is refused and names resolve to IPv4.
 - The sequence is never printed, not even with `-v`.
+- When the client knows the ssh port, it waits for the ssh server's identification line after the knock and exits 4 if none comes within five seconds (`KNOCK_CHECK_TIMEOUT`). It knows the port when `HOST` is an ssh alias whose entry in `~/.ssh/config` sets the hostname or the port (not behind `ProxyJump` or `ProxyCommand`, where ssh never dials the target from here), or when you pass `-c PORT`. `--no-check` skips it. A knock can arrive and still open nothing for you: a carrier NAT that sends UDP and TCP from different public addresses opens the gate for the knock's address while ssh connects from the other. A TCP connect alone would not catch this, because a proxy client's TUN completes the handshake itself and closes only once its upstream fails, so the client waits for the banner. With the check, `knock prod && ssh prod` stops with a sentence instead of hanging.
 
 ## Where a sequence can still end up
 
