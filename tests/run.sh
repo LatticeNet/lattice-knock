@@ -191,6 +191,84 @@ else
   bad "install tests need Python 3 and curl"
 fi
 
+echo "# ssh check"
+if command -v "$PY" >/dev/null 2>&1; then
+  start_tcp() {
+    "$PY" "$ROOT/tests/tcp_banner.py" "$1" "$2" 20 > "$tmp/tcp-$1" 2>&1 &
+    pids+=("$!")
+    for _ in $(seq 1 50); do grep -q ready "$tmp/tcp-$1" 2>/dev/null && break; sleep 0.1; done
+  }
+  start_tcp 42201 banner
+  start_tcp 42202 silent
+  seq3="42211,42212,42213"
+
+  out=$("$K" -d 20 -c 42201 127.0.0.1 "$seq3" 2>&1)
+  rc=$?
+  case "$rc:$out" in
+    "0:"*"ssh answers"*) ok "-c: an ssh banner counts as open" ;;
+    *) bad "-c: an ssh banner counts as open" "rc=$rc: $out" ;;
+  esac
+
+  t0=$(date +%s)
+  out=$(KNOCK_CHECK_TIMEOUT=1 "$K" -d 20 -c 42202 127.0.0.1 "$seq3" 2>&1)
+  rc=$?
+  t1=$(date +%s)
+  case "$rc:$out" in
+    "4:"*"carrier NAT"*) ok "-c: an accepted connection with no banner exits 4 and names the NAT case" ;;
+    *) bad "-c: an accepted connection with no banner exits 4 and names the NAT case" "rc=$rc: $out" ;;
+  esac
+  check "-c: the wait is bounded by KNOCK_CHECK_TIMEOUT" test $((t1 - t0)) -le 4
+  case "$out" in
+    *4221[123]*) bad "-c: the failure never prints the sequence" "$out" ;;
+    *) ok "-c: the failure never prints the sequence" ;;
+  esac
+
+  out=$("$K" -d 20 -c 42203 127.0.0.1 "$seq3" 2>&1)
+  rc=$?
+  check "-c: a closed port exits 4" test "$rc" -eq 4
+
+  out=$(KNOCK_CHECK_PORT=42202 "$K" -d 20 --no-check 127.0.0.1 "$seq3" 2>&1)
+  rc=$?
+  case "$rc:$out" in
+    "0:"*"ssh answers"*) bad "--no-check skips the check" "rc=$rc: $out" ;;
+    "0:"*) ok "--no-check skips the check" ;;
+    *) bad "--no-check skips the check" "rc=$rc: $out" ;;
+  esac
+  expect "-c refuses a port that is not a number" 1 "$K" -c ssh 127.0.0.1 "$seq3"
+  expect "-c refuses port 0" 1 "$K" -c 0 127.0.0.1 "$seq3"
+
+  # A stand-in for ssh -G: the config maps the alias to 127.0.0.1 and a port,
+  # the bare expansion (-F /dev/null) leaves the alias untouched.
+  fake="$tmp/fake-ssh"
+  cat > "$fake" <<'SH'
+#!/bin/sh
+if [ "$1" = "-F" ]; then printf 'hostname %s\nport 22\n' "$4"; exit 0; fi
+printf 'hostname 127.0.0.1\nport %s\n' "$FAKE_PORT"
+if [ -n "${FAKE_JUMP:-}" ]; then printf 'proxyjump %s\n' "$FAKE_JUMP"; fi
+SH
+  chmod +x "$fake"
+  out=$(KNOCK_SSH="$fake" FAKE_PORT=42201 "$K" -d 20 my-alias "$seq3" 2>&1)
+  rc=$?
+  case "$rc:$out" in
+    "0:"*"ssh answers"*) ok "an ssh alias is checked on its own port" ;;
+    *) bad "an ssh alias is checked on its own port" "rc=$rc: $out" ;;
+  esac
+  out=$(KNOCK_SSH="$fake" FAKE_PORT=42202 FAKE_JUMP=bastion "$K" -d 20 my-alias "$seq3" 2>&1)
+  rc=$?
+  case "$rc:$out" in
+    "0:"*"ssh answers"*) bad "an alias behind a jump host is not checked" "rc=$rc: $out" ;;
+    "0:"*) ok "an alias behind a jump host is not checked" ;;
+    *) bad "an alias behind a jump host is not checked" "rc=$rc: $out" ;;
+  esac
+  out=$("$K" -d 20 127.0.0.1 "$seq3" 2>&1)
+  case "$out" in
+    *"ssh answers"*) bad "an address with no -c is not checked" "$out" ;;
+    *) ok "an address with no -c is not checked" ;;
+  esac
+else
+  bad "ssh check tests need Python 3 (PYTHON=$PY not found)"
+fi
+
 echo "# versions"
 kv=$(sed -n 's/^KNOCK_VERSION="\(.*\)"$/\1/p' "$K")
 iv=$(sed -n 's/^KNOCK_RELEASE="\(.*\)"$/\1/p' "$ROOT/install.sh")
